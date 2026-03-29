@@ -1,58 +1,177 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===== Phase 1 Motion System ===== */
+@layer base {
+  :root {
+    --bg: #f4f7fb;
+    --bg-soft: #e9eef6;
+    --surface: #ffffff;
+    --surface-alt: #f8fbff;
+    --text: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --primary: #0b5fff;
+    --primary-strong: #003ec9;
+    --secondary: #0f766e;
+    --accent: #f97316;
+    --success: #15803d;
+    --error: #b91c1c;
+    --ring: #3b82f6;
+  }
+
+  .dark {
+    --bg: #04070f;
+    --bg-soft: #0a1324;
+    --surface: #0f172a;
+    --surface-alt: #111d36;
+    --text: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --primary: #60a5fa;
+    --primary-strong: #3b82f6;
+    --secondary: #2dd4bf;
+    --accent: #fb923c;
+    --success: #34d399;
+    --error: #f87171;
+    --ring: #60a5fa;
+  }
+
+  * {
+    @apply border-slate-200/70 dark:border-slate-700/60;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at 5% -10%, rgba(59, 130, 246, 0.18) 0%, transparent 45%),
+      radial-gradient(circle at 100% 0%, rgba(15, 118, 110, 0.18) 0%, transparent 42%),
+      linear-gradient(160deg, var(--bg) 0%, var(--bg-soft) 100%);
+    @apply antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5 {
+    font-family: "Space Grotesk", "Manrope", ui-sans-serif, system-ui, sans-serif;
+    color: var(--text);
+  }
+
+  h1 {
+    @apply text-4xl md:text-5xl font-bold tracking-tight;
+  }
+
+  h2 {
+    @apply text-3xl md:text-4xl font-bold tracking-tight;
+  }
+
+  h3 {
+    @apply text-2xl font-bold;
+  }
+
+  h4 {
+    @apply text-xl font-semibold;
+  }
+
+  h5 {
+    @apply text-lg font-semibold;
+  }
+}
+
+@layer components {
+  .card-premium {
+    @apply relative overflow-hidden rounded-2xl border p-5 md:p-7 shadow-sm transition-all duration-200;
+    background: linear-gradient(155deg, color-mix(in srgb, var(--surface) 92%, #ffffff 8%), var(--surface-alt));
+    box-shadow: 0 10px 35px -24px rgba(15, 23, 42, 0.55);
+  }
+
+  .card-premium:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 20px 40px -28px rgba(15, 23, 42, 0.6);
+  }
+
+  .input-premium {
+    @apply w-full rounded-xl border px-4 py-3 text-sm leading-relaxed outline-none transition-all duration-200;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 86%, transparent 14%);
+  }
+
+  .input-premium::placeholder {
+    color: var(--text-muted);
+  }
+
+  .input-premium:focus {
+    border-color: color-mix(in srgb, var(--ring) 76%, white 24%);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 18%, transparent 82%);
+  }
+
+  .surface-panel {
+    @apply rounded-xl border;
+    background: color-mix(in srgb, var(--surface) 94%, transparent 6%);
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide;
+    color: var(--text-secondary);
+  }
+
+  .section-kicker {
+    @apply text-xs font-bold uppercase tracking-[0.16em];
+    color: var(--text-muted);
+  }
+
+  .gradient-headline {
+    background: linear-gradient(108deg, var(--primary-strong), var(--secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
 
 @layer utilities {
-  .animate-step {
-    animation: step-enter 0.6s ease-out both;
+  .text-muted {
+    color: var(--text-muted);
   }
 
-  .animate-fade-down {
-    animation: fade-down 0.45s ease-out both;
+  .text-secondary {
+    color: var(--text-secondary);
   }
 
-  .animate-fade-up {
-    animation: fade-up 0.55s ease-out both;
+  .surface-main {
+    background: color-mix(in srgb, var(--surface) 96%, transparent 4%);
   }
 
-  .delay-0 {
-    animation-delay: 0ms;
+  .brand-divider {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--primary) 45%, transparent 55%),
+      transparent
+    );
   }
 
-  .delay-150 {
-    animation-delay: 150ms;
+  .stagger-in {
+    animation: slide-up 0.45s ease-out both;
   }
 }
 
-@keyframes step-enter {
+@keyframes slide-up {
   from {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(10px);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
-@keyframes fade-down {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
   to {
     opacity: 1;
     transform: translateY(0);

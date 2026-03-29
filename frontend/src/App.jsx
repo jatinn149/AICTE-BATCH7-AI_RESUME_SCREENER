@@ -43,26 +43,36 @@ function App() {
 
   return (
     <Layout systemStatus={systemStatus} onReset={resetSession}>
-      <JDInput
-        sessionId={sessionId}
-        locked={!!jd}
-        onJDSet={(jdData) => {
-          // 🔥 CRITICAL FIX — sync backend session globally
-          const newSessionId = jdData?.sessionId;
+      <section className="space-y-6">
+        <div className="surface-panel p-4 md:p-5">
+          <p className="section-kicker mb-2">Onboarding</p>
+          <p className="text-sm text-secondary">
+            Complete each step in sequence: set the job description, upload resumes, review
+            ranked candidates, then use chat for deeper insights.
+          </p>
+        </div>
 
-          if (!newSessionId) {
-            console.error("No sessionId received from backend");
-            return;
-          }
+        <JDInput
+          sessionId={sessionId}
+          locked={!!jd}
+          onJDSet={(jdData) => {
+            // 🔥 CRITICAL FIX — sync backend session globally
+            const newSessionId = jdData?.sessionId;
 
-          activeSessionRef.current = newSessionId;
-          setSessionId(newSessionId);
+            if (!newSessionId) {
+              console.error("No sessionId received from backend");
+              return;
+            }
 
-          setProcessing(true);
-          setJD(jdData);
-          setProcessing(false);
-        }}
-      />
+            activeSessionRef.current = newSessionId;
+            setSessionId(newSessionId);
+
+            setProcessing(true);
+            setJD(jdData);
+            setProcessing(false);
+          }}
+        />
+      </section>
 
       {jd && (
         <ResumeUpload
