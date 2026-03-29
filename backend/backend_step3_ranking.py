@@ -1,4 +1,7 @@
 import re
+import math
+from collections import OrderedDict
+from typing import Any, Dict, Optional, Set, Tuple
 from sentence_transformers import util
 
 
@@ -10,13 +13,15 @@ class ResumeRanker:
     # ================================
     # 🔥 Slight hybrid-role rebalance
     # ================================
-    W_ROLE = 0.30
-    W_SKILL = 0.26
-    W_EXP = 0.22
-    W_SEMANTIC_MAIN = 0.10
-    W_PROJECT = 0.05
-    W_RESP = 0.03
+    W_ROLE = 0.20
+    W_SKILL = 0.30
+    W_EXP = 0.14
+    W_SEMANTIC_MAIN = 0.24
+    W_PROJECT = 0.08
+    W_RESP = 0.04
     W_KEYWORD = 0.0
+    SCORE_TRACE_LIMIT = 1000
+    ROLE_CACHE_LIMIT = 2048
 
     ROLE_TOOL_SIGNALS = {
         "devops": [
@@ -62,6 +67,24 @@ class ResumeRanker:
         "security": ["cybersecurity", "security analyst"],
     }
 
+    SKILL_ALIASES = {
+        "k8s": "kubernetes",
+        "kube": "kubernetes",
+        "node.js": "node",
+        "nodejs": "node",
+        "postgre": "postgresql",
+        "postgres": "postgresql",
+        "ci cd": "ci/cd",
+        "continuous integration": "ci/cd",
+        "continuous delivery": "ci/cd",
+        "ml": "machine learning",
+        "ai": "machine learning",
+        "nlp": "nlp",
+        "powerbi": "power bi",
+        "js": "javascript",
+        "ts": "typescript",
+    }
+
     # =================================================
     # INIT
     # =================================================
@@ -69,32 +92,60 @@ class ResumeRanker:
         self.embedder = embedder
         self.jd_text = jd_text.lower()
         self.jd_schema = jd_schema
+        self.score_trace = []
+        self._role_inference_cache = OrderedDict()
 
         self.jd_embedding = embedder.encode(
             [jd_text],
             normalize_embeddings=True
         )
 
+        self._initialize_jd_requirements(jd_schema)
+        self._initialize_responsibility_context(jd_schema)
+
+    def _initialize_jd_requirements(self, jd_schema: Dict[str, Any]) -> None:
         self.core_skills = set(
             s.lower() for s in jd_schema.get("core_skills", [])
         )
+        self.core_skills = self._normalize_skill_set(self.core_skills)
+        self._core_skill_patterns = self._build_core_skill_patterns(self.core_skills)
 
         self.min_exp, self.ideal_exp = self._parse_experience_range(
             jd_schema.get("min_experience"),
-            jd_text
+            self.jd_text
         )
 
         self.jd_role, _ = self._infer_role_with_confidence(self.jd_text)
 
-        self.resp_text = " ".join(
+    def _build_core_skill_patterns(self, core_skills: Set[str]) -> Dict[str, Tuple[re.Pattern, re.Pattern]]:
+        patterns = {}
+        for skill in core_skills:
+            escaped = re.escape(skill)
+            strict_pattern = re.compile(rf"\b{escaped}\b")
+            relaxed = escaped.replace("/", r"[\s/\\-]*").replace(r"\ ", r"[\s_\-]*")
+            relaxed_pattern = re.compile(rf"\b{relaxed}\b")
+            patterns[skill] = (strict_pattern, relaxed_pattern)
+        return patterns
+
+    def _initialize_responsibility_context(self, jd_schema: Dict[str, Any]) -> None:
+        self.resp_text = self._build_responsibility_text(jd_schema)
+        self.resp_embedding = self._encode_optional_text(self.resp_text)
+
+    def _build_responsibility_text(self, jd_schema: Dict[str, Any]) -> str:
+        return " ".join(
             jd_schema.get("responsibilities", [])
             + jd_schema.get("project_expectations", [])
         ).strip()
 
-        self.resp_embedding = (
-            embedder.encode([self.resp_text], normalize_embeddings=True)
-            if self.resp_text else None
-        )
+    def _encode_optional_text(self, text: str):
+        if not text:
+            return None
+        return self.embedder.encode([text], normalize_embeddings=True)
+
+    def _record_score_trace(self, payload):
+        self.score_trace.append(payload)
+        if len(self.score_trace) > self.SCORE_TRACE_LIMIT:
+            self.score_trace = self.score_trace[-self.SCORE_TRACE_LIMIT:]
 
     # =================================================
     # EXPERIENCE RANGE PARSER
@@ -117,12 +168,15 @@ class ResumeRanker:
     # ROLE INFERENCE
     # =================================================
     def _extract_title_signal(self, text):
-        lines = text.lower().split("\n")[:5]
-        joined = " ".join(lines)
+        lines = text.lower().split("\n")[:12]
+        primary = " ".join(lines[:5])
+        secondary = " ".join(lines[5:12])
 
         scores = {}
         for role, hints in self.TITLE_ROLE_HINTS.items():
-            scores[role] = sum(joined.count(h) for h in hints)
+            primary_hits = sum(primary.count(h) for h in hints)
+            secondary_hits = sum(secondary.count(h) for h in hints)
+            scores[role] = primary_hits + (0.45 * secondary_hits)
 
         best_role = max(scores, key=scores.get)
         conf = scores[best_role]
@@ -131,6 +185,34 @@ class ResumeRanker:
             return "unknown", 0.0
 
         return best_role, min(conf / 2.0, 1.0)
+
+    def _normalize_skill_token(self, skill):
+        token = (skill or "").strip().lower()
+        token = token.replace("_", " ")
+        token = re.sub(r"\s+", " ", token)
+        token = self.SKILL_ALIASES.get(token, token)
+        return token
+
+    def _normalize_skill_set(self, skills):
+        return set(self._normalize_skill_token(s) for s in skills if str(s).strip())
+
+    def _skill_present_in_text(self, skill, text_lower):
+        skill_patterns = self._core_skill_patterns.get(skill)
+        if skill_patterns:
+            strict_pattern, relaxed_pattern = skill_patterns
+            if strict_pattern.search(text_lower):
+                return True
+            return bool(relaxed_pattern.search(text_lower))
+
+        escaped = re.escape(skill)
+        strict_pattern = re.compile(rf"\b{escaped}\b")
+        if strict_pattern.search(text_lower):
+            return True
+
+        # Handle common separator variations, such as "ci/cd" vs "ci cd".
+        relaxed = escaped.replace("/", r"[\s/\\-]*").replace(r"\ ", r"[\s_\-]*")
+        relaxed_pattern = re.compile(rf"\b{relaxed}\b")
+        return bool(relaxed_pattern.search(text_lower))
 
     def _extract_tool_signal(self, text):
         text_lower = text.lower()
@@ -153,6 +235,11 @@ class ResumeRanker:
         return best_role, min(conf * 5, 1.0)
 
     def _infer_role_with_confidence(self, text):
+        cached = self._role_inference_cache.get(text)
+        if cached is not None:
+            self._role_inference_cache.move_to_end(text)
+            return cached
+
         title_role, title_conf = self._extract_title_signal(text)
         tool_role, tool_conf = self._extract_tool_signal(text)
 
@@ -170,24 +257,30 @@ class ResumeRanker:
         best_conf = role_scores[best_role]
 
         if best_conf < 0.15:
-            return "unknown", best_conf
+            result = ("unknown", best_conf)
+        else:
+            result = (best_role, best_conf)
 
-        return best_role, best_conf
+        self._role_inference_cache[text] = result
+        if len(self._role_inference_cache) > self.ROLE_CACHE_LIMIT:
+            self._role_inference_cache.popitem(last=False)
+
+        return result
 
     # =================================================
     # ROLE ALIGNMENT
     # =================================================
-    def role_alignment_score(self, resume):
-        text = resume.get("text", "").lower()
+    def role_alignment_score(self, resume, resume_text_lower: Optional[str] = None):
+        text = resume_text_lower if resume_text_lower is not None else resume.get("text", "").lower()
         candidate_role, conf = self._infer_role_with_confidence(text)
 
         if candidate_role == self.jd_role:
             return 0.92 + 0.08 * conf
 
         if candidate_role == "unknown":
-            return 0.28
+            return 0.52
 
-        return 0.15
+        return 0.40
 
     # =================================================
     # ROLE-AWARE CLUSTER BONUS
@@ -209,22 +302,37 @@ class ResumeRanker:
     # =================================================
     # EXPERIENCE
     # =================================================
-    def experience_score(self, resume):
+    def _read_candidate_experience(self, resume: Dict[str, Any]) -> float:
         try:
-            candidate_exp = float(resume.get("experience_years") or 0)
+            return float(resume.get("experience_years") or 0)
         except Exception:
-            candidate_exp = 0
+            return 0.0
+
+    def _score_experience_without_ideal(self, candidate_exp: float) -> float:
+        if self.min_exp > 0:
+            ratio = candidate_exp / self.min_exp
+            if ratio < 0.6:
+                return max(0.2, ratio * 0.6)
+            if ratio <= 1.5:
+                return 0.9
+            return 0.85
+
+        return min(0.72 + min(candidate_exp, 8.0) * 0.03, 0.96)
+
+    def experience_score(self, resume):
+        candidate_exp = self._read_candidate_experience(resume)
 
         if self.min_exp > 0 and candidate_exp < 0.5 * self.min_exp:
-            return 0.15
+            ratio = candidate_exp / max(self.min_exp, 1e-6)
+            return max(0.35, ratio * 0.85)
 
         if self.ideal_exp <= 0:
-            return 1.0
+            return self._score_experience_without_ideal(candidate_exp)
 
         ratio = candidate_exp / self.ideal_exp
 
         if ratio < 0.8:
-            return ratio * 0.7
+            return max(0.38, ratio * 0.85)
         elif ratio <= 1.3:
             return 1.0
         elif ratio <= 2.0:
@@ -235,30 +343,28 @@ class ResumeRanker:
     # =================================================
     # SKILL COVERAGE
     # =================================================
-    def skill_score(self, resume):
-        res_skills = set(s.lower() for s in resume.get("skills", []))
-        text_lower = resume.get("text", "").lower()
+    def _count_core_skill_matches(self, normalized_resume_skills: Set[str], resume_text_lower: str) -> int:
+        matches = 0
+        for skill in self.core_skills:
+            if skill in normalized_resume_skills or self._skill_present_in_text(skill, resume_text_lower):
+                matches += 1
+        return matches
+
+    def skill_score(self, resume, resume_text_lower: Optional[str] = None):
+        res_skills = self._normalize_skill_set(resume.get("skills", []))
+        text_lower = resume_text_lower if resume_text_lower is not None else resume.get("text", "").lower()
 
         if not self.core_skills:
             return 1.0, 1.0
 
-        matches = 0
-        for skill in self.core_skills:
-            if skill in res_skills or re.search(rf"\b{re.escape(skill)}\b", text_lower):
-                matches += 1
+        matches = self._count_core_skill_matches(res_skills, text_lower)
 
         coverage = matches / len(self.core_skills)
 
-        if coverage < 0.2:
-            gate = 0.4
-        elif coverage < 0.4:
-            gate = 0.65
-        elif coverage < 0.6:
-            gate = 0.85
-        else:
-            gate = 1.0
+        # Smooth gate around coverage=0.35 to avoid hard cliffs.
+        gate = 0.55 + (0.45 / (1.0 + math.exp(-8.0 * (coverage - 0.35))))
 
-        return coverage ** 1.1, gate
+        return coverage ** 1.08, gate
 
     # =================================================
     # SEMANTIC
@@ -269,16 +375,18 @@ class ResumeRanker:
             return 0.0
 
         sem = util.cos_sim(self.jd_embedding, emb)[0][0].item()
-        return max(0.15, min(sem, 0.92))
+        sem = max(0.0, min(sem, 1.0))
+        return max(0.15, sem)
 
     # =================================================
     # PROJECT
     # =================================================
-    def project_score(self, resume):
+    def project_score(self, resume, semantic_main: Optional[float] = None):
         proj_emb = resume.get("project_embedding")
 
         if proj_emb is None:
-            return 0.03
+            base_sem = semantic_main if semantic_main is not None else self.semantic_score(resume)
+            return max(0.10, min(base_sem * 0.72, 0.75))
 
         if self.resp_embedding is not None:
             return util.cos_sim(self.resp_embedding, proj_emb)[0][0].item()
@@ -301,35 +409,88 @@ class ResumeRanker:
     # =================================================
     # FINAL — BROADER SPECTRUM
     # =================================================
+    def _compute_weighted_score(self, role: float, skill: float, exp: float, sem: float, proj: float, resp: float) -> float:
+        return (
+            self.W_ROLE * role +
+            self.W_SKILL * skill +
+            self.W_EXP * exp +
+            self.W_SEMANTIC_MAIN * sem +
+            self.W_PROJECT * proj +
+            self.W_RESP * resp
+        )
+
+    def _calibrate_final_score(self, weighted: float, gate: float, cluster_bonus: float) -> float:
+        final = weighted * gate
+        final *= cluster_bonus
+
+        final = final ** 0.82
+        final = final * 1.55
+
+        if final < 0.12:
+            final *= 0.75
+
+        return final
+
+    def _build_score_trace_payload(
+        self,
+        resume: Dict[str, Any],
+        role: float,
+        skill: float,
+        gate: float,
+        exp: float,
+        sem: float,
+        proj: float,
+        resp: float,
+        weighted: float,
+        cluster_bonus: float,
+        score: float,
+    ) -> Dict[str, Any]:
+        return {
+            "name": resume.get("name", "Unknown"),
+            "role": round(role, 4),
+            "skill": round(skill, 4),
+            "skill_gate": round(gate, 4),
+            "experience": round(exp, 4),
+            "semantic": round(sem, 4),
+            "project": round(proj, 4),
+            "responsibility": round(resp, 4),
+            "weighted": round(weighted, 4),
+            "cluster_bonus": round(cluster_bonus, 4),
+            "score": score,
+        }
+
     def score_resume(self, resume):
         try:
-            role = self.role_alignment_score(resume)
+            resume_text_lower = resume.get("text", "").lower()
+
+            role = self.role_alignment_score(resume, resume_text_lower=resume_text_lower)
             sem = self.semantic_score(resume)
-            skill, gate = self.skill_score(resume)
+            skill, gate = self.skill_score(resume, resume_text_lower=resume_text_lower)
             exp = self.experience_score(resume)
-            proj = self.project_score(resume)
+            proj = self.project_score(resume, semantic_main=sem)
             resp = self.responsibility_score(resume)
+            cluster_bonus = self._cluster_bonus(resume)
 
-            weighted = (
-                self.W_ROLE * role +
-                self.W_SKILL * skill +
-                self.W_EXP * exp +
-                self.W_SEMANTIC_MAIN * sem +
-                self.W_PROJECT * proj +
-                self.W_RESP * resp
+            weighted = self._compute_weighted_score(role, skill, exp, sem, proj, resp)
+            final = self._calibrate_final_score(weighted, gate, cluster_bonus)
+
+            score = round(min(final * 100, 100), 2)
+            trace_payload = self._build_score_trace_payload(
+                resume=resume,
+                role=role,
+                skill=skill,
+                gate=gate,
+                exp=exp,
+                sem=sem,
+                proj=proj,
+                resp=resp,
+                weighted=weighted,
+                cluster_bonus=cluster_bonus,
+                score=score,
             )
+            self._record_score_trace(trace_payload)
 
-            final = weighted * gate
-            final *= self._cluster_bonus(resume)
-
-            # 🔥 ATS-calibrated spread widening
-            final = final ** 0.82
-            final = final * 1.55
-
-            if final < 0.12:
-                final *= 0.75
-
-            return round(min(final * 100, 100), 2)
+            return score
 
         except Exception as e:
             print(f"[RANK ERROR] {resume.get('name','Unknown')}: {e}")
