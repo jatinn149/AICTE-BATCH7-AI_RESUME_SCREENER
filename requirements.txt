@@ -1,4 +1,4 @@
-faiss==1.5.3
+faiss-cpu
 fastapi==0.135.2
 fitz==0.0.1.dev2
 numpy==2.4.3
