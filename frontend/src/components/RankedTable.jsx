@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
 import Card from "./Card";
+import Button from "./UI/Button";
 
 export default function RankedTable({ refresh, sessionId }) {
   const [candidates, setCandidates] = useState([]);
@@ -9,7 +10,7 @@ export default function RankedTable({ refresh, sessionId }) {
   const [decisions, setDecisions] = useState({});
   const [loadingRank, setLoadingRank] = useState(false);
 
-  const fetchCandidates = async () => {
+  const fetchCandidates = useCallback(async () => {
     try {
       setLoadingRank(true);
       setStatusMsg("");
@@ -25,14 +26,13 @@ export default function RankedTable({ refresh, sessionId }) {
     } finally {
       setLoadingRank(false);
     }
-  };
+  }, [sessionId]);
 
   useEffect(() => {
-    // ✅ SAFE GUARD ADDED
     if (refresh && sessionId) {
       fetchCandidates();
     }
-  }, [refresh, sessionId]);
+  }, [fetchCandidates, refresh, sessionId]);
 
   const sendEmail = async (email, name, type) => {
     if (!email || email === "N/A") {
@@ -45,14 +45,9 @@ export default function RankedTable({ refresh, sessionId }) {
 
     try {
       const formData = new FormData();
-
-      // ✅ FIXED TO MATCH BACKEND
       formData.append("email", email);
       formData.append("name", name);
-      formData.append(
-        "decision",
-        type === "confirmation" ? "confirm" : "reject"
-      );
+      formData.append("decision", type === "confirmation" ? "confirm" : "reject");
 
       await api.post("/send_email", formData);
 
@@ -61,9 +56,7 @@ export default function RankedTable({ refresh, sessionId }) {
         [email]: type,
       }));
 
-      setStatusMsg(
-        `${type === "confirmation" ? "Confirmed" : "Rejected"} ${name}`
-      );
+      setStatusMsg(`${type === "confirmation" ? "✨ Confirmed" : "↩️ Rejected"} ${name}`);
     } catch (err) {
       console.error(err);
       setStatusMsg(`Failed to send ${type} email to ${name}`);
@@ -72,166 +65,117 @@ export default function RankedTable({ refresh, sessionId }) {
     }
   };
 
+  const getScoreColor = (score) => {
+    if (score >= 80) return "from-emerald-500 to-teal-500";
+    if (score >= 60) return "from-cyan-500 to-blue-500";
+    return "from-amber-500 to-orange-500";
+  };
+
   return (
     <Card
-      title="Candidate Ranking Results"
-      subtitle="Semantic similarity scores computed using vector embeddings"
+      title="Ranked Candidates"
+      subtitle="Candidates are ranked by semantic match against your locked role description."
+      icon="3"
+      step="03"
     >
-      <div className="space-y-6">
+      <div className="space-y-8">
         {statusMsg && (
-          <p className="text-sm font-medium text-indigo-400">
+          <div className="rounded-xl border border-brand-300/80 bg-brand-100/70 p-4 text-sm font-semibold text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-300">
             {statusMsg}
-          </p>
+          </div>
         )}
 
-        {/* 🔄 LOADING STATE */}
+        {/* LOADING STATE */}
         {loadingRank && (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-400">
-              Computing candidate rankings…
-            </p>
-
-            <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-              <div
-                className="
-                  h-full
-                  w-2/3
-                  animate-pulse
-                  bg-gradient-to-r
-                  from-indigo-500
-                  to-cyan-500
-                "
-              />
+          <div className="space-y-4">
+            <p className="text-secondary">Computing candidate rankings...</p>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-brand-500 to-teal-500" />
             </div>
           </div>
         )}
 
-        {/* ❌ NO DATA */}
+        {/* NO DATA */}
         {!loadingRank && candidates.length === 0 && (
-          <p className="text-center text-slate-400">
-            No ranked candidates available yet.
-          </p>
+          <div className="py-16 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              0
+            </div>
+            <p className="mb-2 font-semibold text-slate-800 dark:text-slate-200">No ranked candidates yet</p>
+            <p className="text-sm text-secondary">Upload resumes to view AI ranking results.</p>
+          </div>
         )}
 
-        {/* ✅ TABLE */}
+        {/* TABLE */}
         {!loadingRank && candidates.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-slate-400 border-b border-white/10">
-                  <th className="px-4 py-4 font-medium">Rank</th>
-                  <th className="px-4 py-4 font-medium">Candidate</th>
-                  <th className="px-4 py-4 font-medium">Email</th>
-                  <th className="px-4 py-4 font-medium">Match Score</th>
-                  <th className="px-4 py-4 font-medium">Predicted Role</th>
-                  <th className="px-4 py-4 font-medium">Decision</th>
-                </tr>
-              </thead>
+          <div className="grid gap-4">
+            {candidates.map((c, idx) => {
+              const decision = decisions[c.email];
+              const score = typeof c.score === "number" ? c.score.toFixed(0) : c.score;
+              const scoreColor = getScoreColor(score);
 
-              <tbody>
-                {candidates.map((c, idx) => {
-                  const decision = decisions[c.email];
-                  const score =
-                    typeof c.score === "number"
-                      ? c.score.toFixed(1)
-                      : c.score;
+              return (
+                <div
+                  key={`${c.email}-${idx}`}
+                  className="group rounded-xl border border-slate-200/80 bg-white/70 p-5 transition-all duration-200 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900/60"
+                >
+                  <div className="mb-4 flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="mb-2 flex items-center gap-3">
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-brand-200 bg-brand-600 text-xs font-bold text-white dark:border-brand-700">
+                          #{idx + 1}
+                        </div>
 
-                  const confidenceColor =
-                    score >= 80
-                      ? "text-green-400 bg-green-500/15"
-                      : score >= 60
-                      ? "text-indigo-400 bg-indigo-500/15"
-                      : "text-amber-400 bg-amber-500/15";
+                        <div className="min-w-0 flex-1">
+                          <h4 className="truncate text-lg font-bold text-slate-900 dark:text-slate-100">{c.name}</h4>
+                          <p className="truncate text-sm text-secondary">{c.email}</p>
+                        </div>
+                      </div>
+                    </div>
 
-                  return (
-                    <tr
-                      key={`${c.email}-${idx}`}
-                      className="
-                        border-b border-white/5
-                        hover:bg-indigo-500/5
-                        transition
-                      "
-                    >
-                      <td className="px-4 py-4 text-sm text-slate-400">
-                        #{idx + 1}
-                      </td>
+                    <div className="text-center">
+                      <div className={`bg-gradient-to-r ${scoreColor} bg-clip-text text-3xl font-black text-transparent`}>
+                        {score}%
+                      </div>
+                      <p className="mt-1 text-xs text-muted">Match Score</p>
+                    </div>
+                  </div>
 
-                      <td className="px-4 py-4 font-medium text-white">
-                        {c.name}
-                      </td>
-
-                      <td className="px-4 py-4 text-sm text-slate-400">
-                        {c.email}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${confidenceColor}`}
+                  <div className="flex gap-3">
+                    {!decision ? (
+                      <>
+                        <Button
+                          disabled={sending}
+                          onClick={() => sendEmail(c.email, c.name, "confirmation")}
+                          variant="success"
+                          size="md"
+                          className="flex-1"
                         >
-                          {score}%
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-4 text-sm text-slate-300">
-                        {c.role}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {!decision ? (
-                          <div className="flex gap-2">
-                            <button
-                              disabled={sending}
-                              onClick={() =>
-                                sendEmail(c.email, c.name, "confirmation")
-                              }
-                              className="
-                                rounded-md
-                                bg-green-600
-                                px-3 py-1.5
-                                text-sm font-semibold text-white
-                                hover:bg-green-700
-                                disabled:opacity-50
-                              "
-                            >
-                              Confirm
-                            </button>
-
-                            <button
-                              disabled={sending}
-                              onClick={() =>
-                                sendEmail(c.email, c.name, "rejection")
-                              }
-                              className="
-                                rounded-md
-                                bg-red-600
-                                px-3 py-1.5
-                                text-sm font-semibold text-white
-                                hover:bg-red-700
-                                disabled:opacity-50
-                              "
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <span
-                            className={`text-sm font-semibold ${
-                              decision === "confirmation"
-                                ? "text-green-400"
-                                : "text-red-400"
-                            }`}
-                          >
-                            {decision === "confirmation"
-                              ? "Confirmed ✓"
-                              : "Rejected ✕"}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          ✓ Confirm
+                        </Button>
+                        <Button
+                          disabled={sending}
+                          onClick={() => sendEmail(c.email, c.name, "rejection")}
+                          variant="danger"
+                          size="md"
+                          className="flex-1"
+                        >
+                          ✕ Reject
+                        </Button>
+                      </>
+                    ) : (
+                      <div className={`flex items-center justify-center w-full py-2 rounded-lg font-semibold ${
+                        decision === "confirmation"
+                          ? "border border-emerald-300/80 bg-emerald-100/70 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "border border-red-300/80 bg-red-100/70 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                      }`}>
+                        {decision === "confirmation" ? "✓ Confirmed" : "✕ Rejected"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -6,15 +6,11 @@ export default function Layout({
   systemStatus = "idle",
   onReset,
 }) {
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme");
-    if (stored) {
-      setTheme(stored);
-      document.documentElement.classList.toggle("dark", stored === "dark");
-    }
-  }, []);
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light";
@@ -24,107 +20,96 @@ export default function Layout({
   };
 
   return (
-    <div
-      className="
-        min-h-screen transition-colors
-        bg-gradient-to-br
-        from-emerald-100 via-green-100 to-lime-100
-        dark:from-slate-950 dark:via-slate-900 dark:to-slate-800
-        text-slate-900 dark:text-slate-100
-      "
-    >
-      {/* DARK DEPTH */}
-      <div
-        className="
-          pointer-events-none fixed inset-0 hidden dark:block
-          bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.12),_transparent_60%)]
-        "
-      />
+    <div className="min-h-screen text-slate-900 transition-colors duration-300 dark:text-slate-100">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-32 -right-16 h-80 w-80 rounded-full bg-brand-500/15 blur-3xl" />
+        <div className="absolute left-0 top-1/3 h-72 w-72 rounded-full bg-teal-500/15 blur-3xl" />
+        <div className="absolute -bottom-28 right-1/4 h-72 w-72 rounded-full bg-orange-400/10 blur-3xl" />
+      </div>
 
-      {/* HERO */}
-      <header className="relative overflow-hidden">
-        <div
-          className="
-            absolute inset-0
-            bg-gradient-to-br
-            from-emerald-200/70 via-green-200/50 to-transparent
-            dark:from-indigo-900/40 dark:via-slate-900/70
-          "
-        />
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/75 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 md:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-brand-200 bg-brand-600 text-white shadow-soft dark:border-brand-700">
+              RS
+            </div>
 
-        <div className="relative mx-auto max-w-6xl px-6 pt-28 pb-20 text-center">
-          {/* TOP CONTROLS */}
-          <div className="absolute right-6 top-6 flex items-center gap-4">
+            <div>
+              <h1 className="font-display text-xl font-bold tracking-tight md:text-2xl">
+                Resume Screener
+              </h1>
+              <p className="text-xs text-muted">Hiring Intelligence Platform</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-3">
             <SystemStatus status={systemStatus} />
 
             <button
-              onClick={onReset}
-              className="
-                rounded-lg px-3 py-1.5 text-sm font-medium
-                border border-red-300 dark:border-red-500/30
-                bg-red-50 dark:bg-red-900/30
-                text-red-600 dark:text-red-300
-                hover:shadow transition
-              "
+              onClick={toggleTheme}
+              className="h-10 rounded-xl border border-slate-300/80 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              title="Toggle theme"
             >
-              ⟳ New Session
+              {theme === "light" ? "Dark" : "Light"}
             </button>
 
             <button
-              onClick={toggleTheme}
-              className="
-                rounded-lg px-3 py-1.5 text-sm font-medium
-                border border-slate-300 dark:border-white/10
-                bg-white/70 dark:bg-slate-900/70
-                hover:shadow transition
-              "
+              onClick={onReset}
+              className="h-10 rounded-xl border border-red-200 bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700 dark:border-red-900"
             >
-              {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+              Reset
             </button>
           </div>
-
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight">
-            AI-Powered{" "}
-            <span
-              className="
-                bg-gradient-to-r
-                from-emerald-600 to-green-500
-                dark:from-indigo-400 dark:to-cyan-400
-                bg-clip-text text-transparent
-              "
-            >
-              Resume Screening
-            </span>
-          </h1>
-
-          <p className="mt-6 mx-auto max-w-3xl text-lg text-slate-600 dark:text-slate-400">
-            An AIML-driven system that ranks candidates using semantic similarity,
-            vector embeddings, and retrieval-augmented generation.
-          </p>
         </div>
-
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-300 dark:via-white/10 to-transparent" />
       </header>
 
-      {/* APP */}
-      <main className="relative mx-auto max-w-6xl px-6 py-24">
-        <div
-          className="
-            relative ml-10 rounded-3xl
-            bg-white/80 dark:bg-slate-900/80
-            backdrop-blur-xl
-            border border-slate-200 dark:border-white/10
-            shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_60px_rgba(0,0,0,0.7)]
-          "
-        >
-          <div className="p-10 md:p-14 space-y-24">
-            {children}
+      <section className="relative px-4 pt-12 md:px-6 md:pt-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="surface-main rounded-3xl border border-slate-200/80 p-6 shadow-soft dark:border-slate-800 md:p-10">
+            <p className="section-kicker mb-3">Smart Candidate Workflow</p>
+
+            <div className="grid gap-8 md:grid-cols-[1.1fr_0.9fr] md:items-end">
+              <div>
+                <h2 className="font-display text-3xl font-bold leading-tight md:text-5xl">
+                  Build a shortlist with
+                  <span className="gradient-headline"> confidence and speed</span>
+                </h2>
+
+                <p className="mt-4 max-w-2xl text-base leading-relaxed text-secondary md:text-lg">
+                  Define the role once, upload resumes in bulk, get ranked candidates, and ask
+                  natural-language questions to validate your hiring decisions.
+                </p>
+              </div>
+
+              <div className="surface-panel border-slate-200/80 p-4 dark:border-slate-700/70 md:p-5">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Workflow</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-800/70">1. Set JD</div>
+                  <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-800/70">2. Upload PDFs</div>
+                  <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-800/70">3. Review Rankings</div>
+                  <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-800/70">4. Ask AI</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      </section>
+
+      <div className="mx-auto mt-8 h-px w-full max-w-6xl brand-divider" />
+
+      <main className="relative mx-auto w-full max-w-6xl px-4 py-10 md:px-6 md:py-12">
+        <div className="space-y-8 md:space-y-10">{children}</div>
       </main>
 
-      <footer className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-        Final AIML Internship Project • Semantic Search • Vector Databases • RAG
+      <footer className="mt-16 border-t border-slate-200/80 px-4 py-10 dark:border-slate-800 md:px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-semibold text-slate-800 dark:text-slate-200">Resume Screener</p>
+            <p className="mt-1 text-xs text-muted">
+              Semantic ranking, structured screening, and candidate intelligence in one streamlined interface.
+            </p>
+          </div>
+        </div>
       </footer>
     </div>
   );

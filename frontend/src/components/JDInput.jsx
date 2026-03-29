@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import api from "../api/axios";
 import Card from "./Card";
+import Button from "./UI/Button";
 
 export default function JDInput({ onJDSet, locked = false, sessionId }) {
   const [jdText, setJDText] = useState("");
@@ -30,13 +31,25 @@ export default function JDInput({ onJDSet, locked = false, sessionId }) {
       return;
     }
 
+    // ✅ Client-side validation to provide immediate feedback
+    const trimmedJD = jdText.trim();
+    if (trimmedJD.length < 50) {
+      setMessage("Job Description must be at least 50 characters.");
+      return;
+    }
+
+    if (trimmedJD.split(/\s+/).length < 10) {
+      setMessage("Job Description must have at least 10 words.");
+      return;
+    }
+
     setSubmitting(true);
     setMessage("");
     hasSubmittedRef.current = true;
 
     try {
       const formData = new FormData();
-      formData.append("jd_text", jdText.trim());
+      formData.append("jd_text", trimmedJD);
 
       const res = await api.post("/set_jd", formData);
 
@@ -53,7 +66,7 @@ export default function JDInput({ onJDSet, locked = false, sessionId }) {
         sessionId: newSessionId,
       });
 
-      setMessage("Job description locked for this session.");
+      setMessage("✨ Job description locked for this session.");
     } catch (err) {
       const detail = err?.response?.data?.detail;
 
@@ -68,7 +81,7 @@ export default function JDInput({ onJDSet, locked = false, sessionId }) {
           sessionId, // keep current session
         });
 
-        setMessage("Job description locked for this session.");
+        setMessage("✨ Job description locked for this session.");
       } else {
         console.error(err);
         setMessage("Failed to set Job Description.");
@@ -81,64 +94,71 @@ export default function JDInput({ onJDSet, locked = false, sessionId }) {
 
   return (
     <Card
-      title="Reference Job Description"
+      title="Job Description"
       subtitle={
         locked
-          ? "Session anchor · This job description is locked"
-          : "This text is converted into a semantic vector representation"
+          ? "Session anchor configured. This description now drives matching and ranking."
+          : "Paste the role requirements to initialize semantic matching for this session."
       }
+      icon="1"
+      step="01"
     >
       <form onSubmit={handleSubmit} className="space-y-6">
-        <textarea
-          rows={7}
-          value={jdText}
-          onChange={(e) => setJDText(e.target.value)}
-          placeholder="Paste the complete job description here…"
-          disabled={submitting || locked}
-          className={`
-            w-full rounded-2xl px-5 py-4 resize-none
-            border
-            ${
-              locked
-                ? "border-green-500/30 bg-slate-800 text-slate-300"
-                : "border-white/10 bg-slate-900 text-white"
-            }
-            placeholder-slate-500
-            focus:outline-none focus:ring-2 focus:ring-indigo-500
-          `}
-        />
-
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-400">
-            {locked
-              ? "This job description defines the entire screening session."
-              : "Used as the semantic reference for candidate ranking."}
+        <div className="surface-panel p-3 md:p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+            Job Description Input
           </p>
 
-          <button
+        <textarea
+            rows={8}
+            value={jdText}
+            onChange={(e) => setJDText(e.target.value)}
+            placeholder="Include role scope, required skills, years of experience, and expectations..."
+            disabled={submitting || locked}
+            className={`input-premium min-h-[220px] resize-y font-mono text-[13px] ${
+              locked ? "cursor-not-allowed opacity-65" : ""
+            }`}
+          />
+        </div>
+
+        <div className="flex flex-col items-start justify-between gap-3 border-t border-slate-200/80 pt-4 dark:border-slate-700/70 md:flex-row md:items-center">
+          <div className="text-xs text-secondary">
+            {locked ? (
+              <span className="inline-flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Session active: JD is locked as the ranking baseline.
+              </span>
+            ) : (
+              <span>This becomes the semantic reference used across all uploaded resumes.</span>
+            )}
+          </div>
+
+          <Button
             type="submit"
             disabled={submitting || locked}
-            className={`
-              rounded-xl px-6 py-2.5 text-sm font-semibold transition-all
-              ${
-                locked
-                  ? "bg-green-600/40 text-green-300 cursor-not-allowed"
-                  : "bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600"
-              }
-            `}
+            variant={locked ? "ghost" : "primary"}
+            size="md"
           >
             {locked
-              ? "Session Locked"
+              ? "Locked"
               : submitting
-              ? "Embedding…"
-              : "Set Job Description"}
-          </button>
+              ? "Embedding"
+              : "Set Description"}
+          </Button>
         </div>
 
         {message && (
-          <p className="text-sm font-medium text-indigo-400">
+          <div
+            className={`
+              rounded-xl border px-4 py-3 text-sm font-semibold
+              ${message.includes("locked") || message.includes("✨")
+                ? "border-emerald-300/80 bg-emerald-100/70 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                : "border-red-300/80 bg-red-100/70 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+              }
+            `}
+          >
             {message}
-          </p>
+          </div>
         )}
       </form>
     </Card>
